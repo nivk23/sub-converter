@@ -81,6 +81,14 @@ def skip(name: str, reason: str) -> None:
         print(f"  SKIP  {name} - {reason}")
 
 
+def need(*values, what: str = "an earlier section") -> None:
+    """Raise Skip if any prerequisite produced by an earlier section is
+    missing, so a failed/skipped setup section doesn't cascade into
+    UnboundLocalError noise in every section that depends on it."""
+    if any(v is None for v in values):
+        raise Skip(f"prerequisite missing: {what} did not complete")
+
+
 class section:
     """Context manager: turns an unexpected exception into one FAIL instead
     of aborting the whole run. Use `raise Skip(reason)` inside to mark the
@@ -343,12 +351,15 @@ def _check_vtt_matches_srt(vtt_path: Path, srt_cues: list[tuple[float, float]], 
 
 
 def tier2(tmp_dir: Path) -> None:
+    model = srt_path = vtt_path = cues = None
+
     with section("Tier 2 setup: fixture + model"):
         if not FIXTURE.exists():
             raise Skip(f"fixture not found: {FIXTURE}")
         model = get_shared_model()
 
     with section("process_file end-to-end on ko_sample.flac (default output_dir)"):
+        need(model, what="Tier 2 setup")
         audio_copy = tmp_dir / "ko_sample.flac"
         shutil.copyfile(FIXTURE, audio_copy)
 
@@ -368,18 +379,22 @@ def tier2(tmp_dir: Path) -> None:
         check("vtt file non-empty", vtt_path.exists() and vtt_path.stat().st_size > 0)
 
     with section("Tier 2: SRT structure"):
+        need(srt_path, what="process_file end-to-end")
         cues = _check_srt_structure(srt_path, "ko_sample")
 
     with section("Tier 2: timestamps sane"):
+        need(cues, what="Tier 2: SRT structure")
         if not cues:
             raise Skip("no cues parsed from SRT, cannot check timestamp sanity")
         # 12.4s fixture duration per the task brief.
         _check_timestamps_sane(cues, duration=12.4, label="ko_sample")
 
     with section("Tier 2: VTT matches SRT"):
+        need(vtt_path, cues, what="process_file end-to-end / SRT structure")
         _check_vtt_matches_srt(vtt_path, cues, "ko_sample")
 
     with section("Tier 2: both files decode as UTF-8"):
+        need(srt_path, vtt_path, what="process_file end-to-end")
         try:
             srt_path.read_text(encoding="utf-8")
             vtt_path.read_text(encoding="utf-8")
@@ -394,6 +409,8 @@ def tier2(tmp_dir: Path) -> None:
 # ---------------------------------------------------------------------------
 
 def tier3_video(tmp_dir: Path) -> None:
+    model = mp4_path = srt_path = vtt_path = None
+
     with section("Tier 3: mux fixture into mp4"):
         if not FIXTURE.exists():
             raise Skip(f"fixture not found: {FIXTURE}")
@@ -401,7 +418,7 @@ def tier3_video(tmp_dir: Path) -> None:
             raise Skip("ffmpeg not on PATH")
         model = get_shared_model()
 
-        mp4_path = tmp_dir / "ko_sample.mp4"
+        mp4_target = tmp_dir / "ko_sample.mp4"
         cmd = [
             "ffmpeg", "-y",
             "-f", "lavfi", "-i", "color=c=black:s=160x120:r=5",
@@ -409,7 +426,7 @@ def tier3_video(tmp_dir: Path) -> None:
             "-shortest",
             "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "ultrafast",
             "-c:a", "aac",
-            str(mp4_path),
+            str(mp4_target),
         ]
         result = subprocess.run(cmd, capture_output=True)
         if result.returncode != 0:
@@ -417,8 +434,10 @@ def tier3_video(tmp_dir: Path) -> None:
                 "ffmpeg mux failed: "
                 + result.stderr.decode(errors="replace")[-500:]
             )
+        mp4_path = mp4_target
 
     with section("Tier 3: process_file on muxed mp4 (video/extract_audio path)"):
+        need(model, mp4_path, what="Tier 3: mux fixture into mp4")
         out_dir = tmp_dir / "video_out"
         srt_path, vtt_path = process_file(mp4_path, model=model, output_dir=out_dir)
         check("video srt file exists", srt_path.exists())
@@ -427,6 +446,7 @@ def tier3_video(tmp_dir: Path) -> None:
         check("video vtt non-empty", vtt_path.exists() and vtt_path.stat().st_size > 0)
 
     with section("Tier 3: video SRT structure"):
+        need(srt_path, what="process_file on muxed mp4")
         _check_srt_structure(srt_path, "video")
 
 

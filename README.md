@@ -45,6 +45,44 @@ docker run -p 8000:8000 sub-converter
 
 The image bundles `ffmpeg`; model weights still download to the container's cache on first use (mount a volume at `/root/.cache/huggingface` to persist them across runs).
 
+## Troubleshooting install
+
+### `Failed to build 'av'` / `pkg-config could not find libraries ['avformat', ...]`
+
+`faster-whisper` depends on PyAV (`av`). Normally pip downloads a prebuilt wheel. If pip instead tries to **compile** it and fails looking for `libavformat`, `libswscale`, etc., it means no wheel matched your interpreter or platform. Usual causes: a Python version newer than PyAV publishes wheels for, an unusual platform (Windows on ARM, Alpine/musl, Termux), or an old pip.
+
+Check and fix in this order:
+
+```bash
+python --version
+python -m pip install --upgrade pip
+python -m pip install --only-binary=:all: av
+```
+
+The last command refuses to compile and prints exactly why no wheel matches. If your Python is too new, create a virtualenv with Python 3.11 or 3.12 and install there:
+
+```bash
+python3.12 -m venv .venv
+source .venv/bin/activate      # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+```
+
+Compiling PyAV from source is a last resort and needs the FFmpeg development headers (`pkg-config` plus `libavformat-dev libavcodec-dev libavdevice-dev libavutil-dev libavfilter-dev libswscale-dev libswresample-dev` on Debian/Ubuntu).
+
+### `ffmpeg not on PATH`
+
+Audio-only inputs work without it, but video inputs and the Tier 3 tests need the `ffmpeg` binary:
+
+- Debian/Ubuntu: `sudo apt install ffmpeg`
+- macOS: `brew install ffmpeg`
+- Windows: `winget install Gyan.FFmpeg`, then open a new terminal
+
+Confirm with `ffmpeg -version`.
+
+### Test output shows `SKIP ... prerequisite missing`
+
+Tiers 2 and 3 depend on the fixture, a downloadable model, `ffmpeg`, and `fastapi`/`httpx`. When one of those is missing, the setup section is skipped and every section that depends on it is skipped too, naming the section that did not complete. Fix the first `SKIP` or `FAIL` in the output; the rest follow from it. `python test_convert.py --strict` turns skips into failures for CI.
+
 ## How it works
 
 ```
