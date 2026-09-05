@@ -47,6 +47,8 @@ The image bundles `ffmpeg`; model weights still download to the container's cach
 
 ## Troubleshooting install
 
+First run `python3 doctor.py`. It prints a few lines describing your environment and a one-line verdict with the next command to run.
+
 ### `Failed to build 'av'` / `pkg-config could not find libraries ['avformat', ...]`
 
 `faster-whisper` depends on PyAV (`av`). Normally pip downloads a prebuilt wheel. If pip instead tries to **compile** it and fails looking for `libavformat`, `libswscale`, etc., it means no wheel matched your interpreter or platform. Usual causes: a Python version newer than PyAV publishes wheels for, an unusual platform (Windows on ARM, Alpine/musl, Termux), or an old pip.
