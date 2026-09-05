@@ -69,6 +69,26 @@ pip install -r requirements.txt
 
 Compiling PyAV from source is a last resort and needs the FFmpeg development headers (`pkg-config` plus `libavformat-dev libavcodec-dev libavdevice-dev libavutil-dev libavfilter-dev libswscale-dev libswresample-dev` on Debian/Ubuntu).
 
+### Termux / Android
+
+PyPI has no wheels for Termux (Android's bionic libc is not glibc, so pip rejects the standard `manylinux` wheels, and `--only-binary` reports "from versions: none"). That affects not just `av` but also `ctranslate2`, `onnxruntime`, and `tokenizers`, all of which `faster-whisper` needs. Building that whole stack from source on a phone is impractical.
+
+The workable route is a glibc Linux inside Termux via `proot-distro`, where normal aarch64 wheels install:
+
+```bash
+pkg install proot-distro
+proot-distro install ubuntu
+proot-distro login ubuntu
+# now inside Ubuntu:
+apt update && apt install -y python3 python3-venv python3-pip ffmpeg git
+git clone https://github.com/nivk23/sub-converter.git && cd sub-converter
+python3 -m venv .venv && . .venv/bin/activate
+pip install -r requirements.txt
+python test_convert.py --fast
+```
+
+Phone CPUs are slow for Whisper. Use `--model tiny` or `base` for anything longer than a minute or two; the default `small` will work but take a while. Do not `pip install --upgrade pip` in Termux itself; it is managed by `pkg`.
+
 ### `ffmpeg not on PATH`
 
 Audio-only inputs work without it, but video inputs and the Tier 3 tests need the `ffmpeg` binary:
